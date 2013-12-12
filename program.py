@@ -1,4 +1,4 @@
-from gi.repository import Gtk
+from gi.repository import Gtk, GObject
 from course import Course, CourseView, CourseType
 from major import Major, MajorView
 
@@ -28,51 +28,45 @@ def parse_program (site):
 
     majors_path = content + "/descendant::table[contains(@class, 'majorTable')]"
     for m in tree.xpath (majors_path):
-#        print (etree.tostring (m, pretty_print=True, method="html"))
         m_path = tree.getpath(m)
         title_path = m_path + "/thead/descendant::a[attribute::class='title']/text()"
         major_title = tree.xpath (title_path)[0]
-#        print (major_title)
-        
+
         maj = Major (major_title)
         course_path = m_path + "/descendant-or-self::table[contains(@class, 'courseTable')]"
         for course in tree.xpath (course_path):
-#            print ()
             maj.courses = parse_course_table (program, tree, course)
         program.majors.append (maj)
     return program
-#        break
 
 def parse_course_table (p, tree, table):
     courses = []
-#    print (table.get("id"))
     course_type_path = tree.getpath (table) + "/descendant::a[contains(@class, 'title')]/text()"
     course_type = tree.xpath(course_type_path)[0]
-#    print (course_type)
 
     codes_path = tree.getpath (table) + "/descendant::td[contains(@class, 'code')]/a"
     codes = tree.xpath (codes_path)
-#    print (codes)
-#    print ([a.get ("href") for a in codes])
-#    print ([a.text for a in codes])
     codes_title_path = tree.getpath (table) + "/descendant::td[contains(@class, 'title')]/a/text()"
     codes_title = tree.xpath (codes_title_path)
-    if len(codes) != len(codes_title) or len(codes) != len(codes_title):
-#        print ("Error: lengths don't match with codes and codes_title")
+    if len(codes) != len(codes_title):
+        print ("Error: lengths don't match with codes and codes_title")
         return []
 
     for i in range (len (codes)):
         c = Course(codes[i].text)
         c.type = parse_course_type (course_type)
-        c.short_desc = codes_title[i]
+        c.name = codes_title[i]
         c.link = codes[i].get ("href")
-#        print (c)
+        for e in codes_title[i].getparent().itersiblings():
+            if e.tag == "span" and e.get ("class") == "comment":
+                for p in e.iterchildren():
+                    if p.tag == "p":
+                        c.comment = p.text
         courses.append (c)
     return courses
 
 def parse_course_type (t):
-    t = t.lower()
-    t = t.replace ("courses", "").strip()
+    t = t.lower().replace ("courses", "").strip()
     if t == "core": return CourseType.REQUIRED
     if t == "directed": return CourseType.DIRECTED
     if t == "compulsory": return CourseType.REQUIRED
@@ -95,4 +89,13 @@ class ProgramView (Gtk.Box):
         self.name.set_text (program.name)
 
         for m in program.majors:
-            self.pack_start (MajorView (m), False, True, 0)
+            mv = MajorView (m)
+            mv.view_course.connect (self.on_view_course)
+            self.pack_start (mv, False, True, 0)
+
+    def on_view_course (self, majorview, course, data=None):
+        self.view_course.emit (course)
+
+    @GObject.Signal(flags=GObject.SignalFlags.RUN_LAST)
+    def view_course (self, course:GObject.TYPE_PYOBJECT):
+        pass
